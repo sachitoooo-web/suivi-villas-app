@@ -1,56 +1,67 @@
 import openpyxl
+from datetime import datetime
 
-# 1. Règles d'intelligence
-def determiner_type_projet(texte_cellule):
-    titre = str(texte_cellule).upper() 
-    if "BATTERIE" in titre:
-        return "BATTERIE"
-    return "PV"
-
-def verifier_regle_securite(code_couleur):
-    couleur = str(code_couleur).upper()
-    # Si la couleur contient du rouge ou du blanc
-    if "FF0000" in couleur or "FFFFFF" in couleur:
-        return False # Non applicable
-    return True # Applicable
-
-# 2. Le nouveau scanner 2D pour ton calendrier
 def lire_excel_calendrier(fichier_binaire):
-    # On lit le fichier qui viendra du glisser-déposer
     classeur = openpyxl.load_workbook(fichier_binaire, data_only=True)
     feuille = classeur.active
     
-    # On utilise un "dictionnaire" pour éviter les doublons (si un projet dure 3 jours)
-    projets_trouves = {} 
+    projets = {}
     
-    # On scanne la grille complète, case par case
-    for ligne in feuille.iter_rows():
+    # La date limite : 1er août 2026
+    date_limite = datetime(2026, 8, 1)
+    
+    # On scanne à partir de la ligne 3 (pour sauter les dates en haut)
+    for ligne in feuille.iter_rows(min_row=3):
         for cellule in ligne:
-            # S'il y a du texte dans la case
-            if cellule.value:
-                texte = str(cellule.value)
+            valeur = cellule.value
+            
+            if valeur and isinstance(valeur, str) and "PRS" in valeur:
+                nom_propre = valeur.replace("\n", " ").strip()
                 
-                # Astuce : On repère les vrais projets grâce au préfixe "PRS"
-                if "PRS" in texte:
-                    type_proj = determiner_type_projet(texte)
+                # Initialisation du projet s'il n'existe pas encore dans notre liste
+                if nom_propre not in projets:
+                    projets[nom_propre] = {
+                        "Nom du Projet": nom_propre,
+                        "Type": "BATTERIE" if "BATTERIE" in nom_propre.upper() else "PV",
+                        "EstMonProjet": False,
+                        "Date de Début": "Non définie",
+                        "EstApresAout": False # Filtre pour le 1er août
+                    }
+                
+                # 1. Capture de la couleur
+                try:
+                    couleur_hex = str(cellule.fill.fgColor.rgb)
+                except:
+                    couleur_hex = "INCONNUE"
                     
-                    try:
-                        couleur = cellule.fill.fgColor.rgb
-                    except:
-                        couleur = None
+                # 2. Capture de la date sur la ligne 2
+                date_val = feuille.cell(row=2, column=cellule.column).value
+                est_valide_temporellement = False
+                
+                if isinstance(date_val, datetime) and date_val >= date_limite:
+                    est_valide_temporellement = True
+                
+                # 3. Application des règles Vert et Jaune
+                if couleur_hex == "FF00B050" or couleur_hex == "FF4CAF50": # Ton Vert (Tolérance sur 2 nuances)
+                    projets[nom_propre]["EstMonProjet"] = True
+                    if est_valide_temporellement:
+                        projets[nom_propre]["EstApresAout"] = True
                         
-                    securite = verifier_regle_securite(couleur)
-                    
-                    # On nettoie le texte (on enlève les sauts de ligne pour faire un titre propre)
-                    nom_propre = texte.replace("\n", " ").strip()
-                    
-                    # Si on n'a pas encore vu ce projet, on l'ajoute à la liste
-                    if nom_propre not in projets_trouves:
-                        projets_trouves[nom_propre] = {
-                            "nom": nom_propre,
-                            "type": type_proj,
-                            "securite_applicable": securite
-                        }
-                        
-    # On renvoie la liste finale sans doublons
-    return list(projets_trouves.values())
+                elif couleur_hex == "FFFFFF00": # Jaune (Début des travaux)
+                    if isinstance(date_val, datetime) and projets[nom_propre]["Date de Début"] == "Non définie":
+                        # On enregistre la date au format lisible (JJ/MM/AAAA)
+                        projets[nom_propre]["Date de Début"] = date_val.strftime("%d/%m/%Y")
+                    if est_valide_temporellement:
+                        projets[nom_propre]["EstApresAout"] = True
+
+    # 4. On filtre pour ne renvoyer QUE tes projets (Vert) qui sont actifs après le 1er août
+    mes_projets_finaux = []
+    for p in projets.values():
+        if p["EstMonProjet"] and p["EstApresAout"]:
+            mes_projets_finaux.append({
+                "Nom du Projet": p["Nom du Projet"],
+                "Type": p["Type"],
+                "Date de Début": p["Date de Début"]
+            })
+            
+    return mes_projets_finaux
