@@ -1,0 +1,26 @@
+{
+  "1_Initialisation": [
+    {"tache": "Offre signée", "mot_cle_document": "Offre", "types_projets": ["PV_SEUL", "BATTERIE_SEULE", "PV_BATTERIE"]},
+    {"tache": "Enquête technique", "mot_cle_document": "Enquête", "types_projets": ["PV_SEUL", "BATTERIE_SEULE", "PV_BATTERIE"]},
+    {"tache": "Demande de raccordement", "mot_cle_document": "Raccordement", "types_projets": ["PV_SEUL", "BATTERIE_SEULE", "PV_BATTERIE"]},
+    {"tache": "Fichier de coût", "mot_cle_document": "Coût", "types_projets": ["PV_SEUL", "BATTERIE_SEULE", "PV_BATTERIE"]}
+  ],
+  "2_Visite_Technique": [
+    {"tache": "Rapport Visite", "mot_cle_document": "Visite", "types_projets": ["PV_SEUL", "BATTERIE_SEULE", "PV_BATTERIE"]},
+    {"tache": "Dronage toiture", "mot_cle_document": "Dronage", "types_projets": ["PV_SEUL", "PV_BATTERIE"]}
+  ],
+  "3_Planification": [
+    {"tache": "Calepinage", "mot_cle_document": "Calepinage", "types_projets": ["PV_SEUL", "PV_BATTERIE"]},
+    {"tache": "Calcul Structure", "mot_cle_document": "Structure", "types_projets": ["PV_SEUL", "PV_BATTERIE"]},
+    {"tache": "Plan String", "mot_cle_document": "String", "types_projets": ["PV_SEUL", "PV_BATTERIE"]},
+    {"tache": "Schéma AC/RBM", "mot_cle_document": "Schéma AC", "types_projets": ["PV_SEUL", "BATTERIE_SEULE", "PV_BATTERIE"]}
+  ],
+  "4_Communication": [
+    {"tache": "Validation des dates", "mot_cle_document": "Dates", "types_projets": ["PV_SEUL", "BATTERIE_SEULE", "PV_BATTERIE"]},
+    {"tache": "Plan de Sécurité", "mot_cle_document": "Sécurité", "types_projets": ["PV_SEUL", "PV_BATTERIE"]}
+  ],
+  "5_Reception": [
+    {"tache": "Codes de production", "mot_cle_document": "Codes", "types_projets": ["PV_SEUL", "PV_BATTERIE"]},
+    {"tache": "Rapport OIBT", "mot_cle_document": "OIBT", "types_projets": ["PV_SEUL", "BATTERIE_SEULE", "PV_BATTERIE"]}
+  ]
+}
