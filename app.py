@@ -1,28 +1,28 @@
 import streamlit as st
-from ingestion import lire_excel_calendrier # On importe notre cerveau !
+from ingestion import lire_excel_calendrier
 
 st.set_page_config(page_title="Suivi Projets Villas", page_icon="☀️", layout="wide")
 
 st.title("☀️ Dashboard de Suivi - Chantiers Villas")
 st.markdown("---")
 
-st.subheader("📥 Mise à jour des projets")
-st.write("Glisse ton fichier de planning Excel ici pour mettre à jour la liste des projets.")
+st.subheader("📥 Mise à jour des projets via Excel")
+st.write("Glisse ton fichier de planning ici. Seuls tes projets (Vert) actifs à partir du 1er août 2026 seront extraits, avec leur date de début (Jaune).")
 
-# La zone magique de glisser-déposer
 fichier_upload = st.file_uploader("Fichier Excel (.xlsx)", type=["xlsx"])
 
 if fichier_upload is not None:
-    # Si un fichier a été déposé, on lance le scanner !
     st.info("Scan du calendrier en cours...")
     
-    # On envoie le fichier à notre script Python
+    # Lancement du script
     projets_extraits = lire_excel_calendrier(fichier_upload)
     
-    st.success(f"Scan terminé ! {len(projets_extraits)} projets uniques trouvés.")
-    
-    # On affiche les résultats dans un beau tableau
-    st.dataframe(projets_extraits, use_container_width=True)
+    if len(projets_extraits) > 0:
+        st.success(f"Scan terminé ! {len(projets_extraits)} de tes chantiers détectés à partir du mois d'août.")
+        # Affichage du résultat
+        st.dataframe(projets_extraits, use_container_width=True)
+    else:
+        st.warning("Aucun projet t'appartenant n'a été trouvé à partir du 1er août.")
 
 else:
-    st.warning("En attente d'un fichier Excel pour afficher les données.")
+    st.warning("En attente de ton fichier Excel pour analyser le planning.")
