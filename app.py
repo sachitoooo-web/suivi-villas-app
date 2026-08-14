@@ -1,175 +1,168 @@
 import streamlit as st
-import json
 from supabase import create_client, Client
-from ingestion import lire_excel_calendrier
-from datetime import datetime, timedelta
+from streamlit_calendar import calendar
+import datetime
+from ia_extraction import analyser_offre_pdf
+import os
 
-# Configuration de la page (Design épuré, mode large)
-st.set_page_config(
-    page_title="Suivi Projets Villas", 
-    page_icon="⚡", 
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- CONFIGURATION DE LA PAGE ---
+st.set_page_config(page_title="Soleol - Pilotage Projets", layout="wide", initial_sidebar_state="expanded")
 
-# Styles CSS personnalisés pour un rendu propre et moderne
-st.markdown("""
-    <style>
-    .main { background-color: #fafafa; }
-    .stTabs [data-baseweb="tab-list"] { gap: 24px; }
-    .stTabs [data-baseweb="tab"] { height: 50px; font-weight: 600; font-size: 16px; }
-    </style>
-""", unsafe_allow_html=True)
-
-# 1. Connexion Supabase
+# --- CONNEXION SUPABASE ---
 @st.cache_resource
-def initialiser_supabase():
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+def init_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-supabase: Client = initialiser_supabase()
+supabase = init_supabase()
 
-# 2. Chargement Configuration JSON
-@st.cache_data
-def charger_config_checklists():
-    with open("checklists_config.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+# --- CHARGEMENT DES DONNÉES ---
+def get_projects():
+    response = supabase.table("solar_projects").select("*").execute()
+    return response.data
 
-config = charger_config_checklists()
-
-# En-tête principal élégant
-st.title("⚡ Pilotage des Chantiers Villas")
-st.markdown("Suivi centralisé des installations photovoltaïques et batteries.")
-st.markdown("---")
-
-onglet_suivi, onglet_maj = st.tabs(["📊 Suivi & Pilotage Projets", "📥 Synchronisation Excel"])
+# --- MISE À JOUR D'UNE CASE À COCHER ---
+def update_checkbox(project_id, column_name, new_value):
+    supabase.table("solar_projects").update({column_name: new_value}).eq("id", project_id).execute()
+    st.toast("✅ Mise à jour enregistrée")
 
 # ==========================================
-# ONGLET 1 : PILOTAGE & DESIGN ÉPURÉ
+# BARRE LATÉRALE : CRÉATION DE PROJET VIA IA
 # ==========================================
-with onglet_suivi:
-    reponse_db = supabase.table("projects").select("*").execute()
-    projets_enregistres = reponse_db.data
+with st.sidebar:
+    st.header("🤖 Nouvelle Offre Signée")
+    st.write("Glisse le PDF pour extraire les données")
     
-    if len(projets_enregistres) > 0:
-        # Barre de sélection / recherche fluide
-        liste_noms = [p["project_name"] for p in projets_enregistres]
-        
-        col_search, col_space = st.columns([2, 1])
-        with col_search:
-            projet_choisi = st.selectbox("🔍 Rechercher un chantier :", liste_noms)
-        
-        # Infos du projet sélectionné
-        infos_projet = next(p for p in projets_enregistres if p["project_name"] == projet_choisi)
-        projet_id = infos_projet["id"]
-        type_du_projet = infos_projet["project_type"]
-        date_debut_str = infos_projet.get("start_date")
-        
-        # Carte d'identité du projet (Design en colonnes claires)
-        st.markdown("")
-        with st.container(border=True):
-            c1, c2, c3 = st.columns(3)
-            c1.metric(label="Type d'installation", value=type_du_projet)
-            
-            date_debut_obj = None
-            if date_debut_str:
-                date_debut_obj = datetime.strptime(date_debut_str, "%Y-%m-%d")
-                c2.metric(label="Date de Chantier / Début", value=date_debut_obj.strftime('%d/%m/%Y'))
-            else:
-                c2.metric(label="Date de Chantier / Début", value="Non définie")
-                
-            # Récupération des tâches pour calcul de progression
-            reponse_tasks = supabase.table("tasks").select("*").eq("project_id", projet_id).execute()
-            taches_db = {t["task_name"]: t for t in reponse_tasks.data}
-            
-            # Compteur de progression
-            total_applicables = 0
-            validees = 0
-            for phase_nom, liste_taches in config.items():
-                for tache_config in liste_taches:
-                    if type_du_projet in tache_config["types_projets"]:
-                        total_applicables += 1
-                        nom_t = tache_config["tache"]
-                        if nom_t in taches_db and taches_db[nom_t].get("status") == "VALIDE":
-                            validees += 1
-                            
-            progression = int((validees / total_applicables) * 100) if total_applicables > 0 else 0
-            c3.metric(label="Progression globale", value=f"{progression}%")
-            st.progress(progression / 100)
-
-        st.markdown("### 📋 Chemin Critique & Jalons")
-        
-        # Affichage en 2 colonnes ergonomiques pour les 5 phases
-        col_gauche, col_droite = st.columns(2)
-        colonnes_repartition = [col_gauche, col_gauche, col_gauche, col_droite, col_droite]
-        
-        for idx, (phase_nom, liste_taches) in enumerate(config.items()):
-            with colonnes_repartition[idx]:
-                with st.container(border=True):
-                    st.markdown(f"**📌 {phase_nom.replace('_', ' ').upper()}**")
-                    st.markdown("")
-                    
-                    for tache_config in liste_taches:
-                        nom_t = tache_config["tache"]
-                        
-                        if type_du_projet in tache_config["types_projets"]:
-                            if nom_t not in taches_db:
-                                nouveau = {"project_id": projet_id, "task_name": nom_t, "status": "EN_ATTENTE", "phase": int(phase_nom[0])}
-                                supabase.table("tasks").insert(nouveau).execute()
-                                taches_db[nom_t] = nouveau
-                                
-                            date_texte = ""
-                            if date_debut_obj and tache_config.get("jours_avant_debut") is not None:
-                                d_limite = date_debut_obj - timedelta(days=tache_config["jours_avant_debut"])
-                                date_texte = f" *(📅 Limite: {d_limite.strftime('%d/%m')})*"
-                                
-                            statut_actuel = (taches_db[nom_t].get("status") == "VALIDE")
-                            coche = st.checkbox(f"{nom_t}{date_texte}", value=statut_actuel, key=f"{projet_id}_{nom_t}")
-                            
-                            if coche != statut_actuel:
-                                nouveau_statut = "VALIDE" if coche else "EN_ATTENTE"
-                                supabase.table("tasks").update({"status": nouveau_statut}).eq("project_id", projet_id).eq("task_name", nom_t).execute()
-                                st.rerun()
-                        else:
-                            st.markdown(f"<span style='color: grey; text-decoration: line-through;'>{nom_t} (Non applicable)</span>", unsafe_allow_html=True)
-                    st.markdown("")
-    else:
-        st.info("👋 Aucun projet enregistré. Rendez-vous dans l'onglet 'Synchronisation Excel' pour importer votre planning.")
-
-# ==========================================
-# ONGLET 2 : SYNCHRONISATION
-# ==========================================
-with onglet_maj:
-    st.subheader("Mise à jour du planning")
-    st.write("Glissez votre fichier Excel ci-dessous. Les nouveaux chantiers seront ajoutés et les dates synchronisées sans effacer vos validations manuelles.")
+    fichier_upload = st.file_uploader("PDF du contrat", type=["pdf"])
     
-    with st.container(border=True):
-        fichier_upload = st.file_uploader("Fichier Excel du planning (.xlsx)", type=["xlsx"])
-
     if fichier_upload is not None:
-        with st.spinner("Analyse du calendrier en cours..."):
-            projets_extraits = lire_excel_calendrier(fichier_upload)
+        if st.button("Lancer l'extraction IA"):
+            with st.spinner("Analyse du contrat en cours..."):
+                pdf_bytes = fichier_upload.getvalue()
+                donnees = analyser_offre_pdf(pdf_bytes)
+                
+                if donnees:
+                    st.success("Données extraites ! Création du projet...")
+                    
+                    # On crée le projet avec les données IA + la case "Projet signé" cochée
+                    nouveau_projet = {
+                        "project_name": "Nouveau Projet (à renommer)",
+                        "client_name": "Client IA",
+                        "total_price": donnees.get("prix_total", 0),
+                        "power_kwp": donnees.get("puissance_kwp", 0),
+                        "battery_kwh": donnees.get("batterie_kwh", 0),
+                        "equipment_list": donnees.get("materiel", ""),
+                        "is_signed": True,
+                        # On met une date de début par défaut à demain pour le voir sur le calendrier
+                        "start_date": (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+                    }
+                    supabase.table("solar_projects").insert(nouveau_projet).execute()
+                    st.toast("🚀 Projet ajouté au système !")
+                    st.rerun()
+                else:
+                    st.error("Erreur d'extraction IA.")
+
+# ==========================================
+# INTERFACE PRINCIPALE : LE PLANNING (CALENDRIER)
+# ==========================================
+st.title("📅 Planning Général des Chantiers")
+
+# Récupération de tous les projets
+projets = get_projects()
+
+# Préparation des événements pour le calendrier
+events = []
+for p in projets:
+    if p.get("start_date"):
+        # On définit la couleur selon l'état du projet
+        couleur = "#28a745" if p.get("is_project_finished") else "#007bff"
+        events.append({
+            "title": p["project_name"],
+            "start": p["start_date"],
+            "id": str(p["id"]),
+            "color": couleur
+        })
+
+# Options d'affichage du calendrier
+calendar_options = {
+    "headerToolbar": {
+        "left": "today prev,next",
+        "center": "title",
+        "right": "dayGridMonth,timeGridWeek"
+    },
+    "initialView": "dayGridMonth",
+    "selectable": True,
+}
+
+# Affichage du composant Calendrier
+cal_state = calendar(events=events, options=calendar_options, custom_css="""
+    .fc-event { cursor: pointer; }
+    .fc-toolbar-title { font-weight: 600; }
+""")
+
+# ==========================================
+# VUE DE DÉTAIL (QUAND ON CLIQUE SUR UN PROJET)
+# ==========================================
+st.divider()
+
+if cal_state.get("eventClick"):
+    # On récupère l'ID du projet cliqué dans le calendrier
+    clicked_id = int(cal_state["eventClick"]["event"]["id"])
+    
+    # On cherche les infos complètes de ce projet
+    projet_actuel = next((p for p in projets if p["id"] == clicked_id), None)
+    
+    if projet_actuel:
+        st.subheader(f"🛠️ Suivi du projet : {projet_actuel['project_name']}")
+        
+        # --- BLOC 1 : DONNÉES IA (Finance & Tech) ---
+        st.write("### 📊 Données Techniques & Financières (Extraites par l'IA)")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Prix Total TTC", f"{projet_actuel['total_price']} CHF")
+        col2.metric("Puissance PV", f"{projet_actuel['power_kwp']} kWc")
+        col3.metric("Batterie", f"{projet_actuel['battery_kwh']} kWh")
+        st.info(f"**Matériel :** {projet_actuel['equipment_list']}")
+        
+        # --- BLOC 2 : CHECKLIST OPÉRATIONNELLE ---
+        st.write("### ✅ Checklist de préparation")
+        
+        c1, c2, c3 = st.columns(3)
+        
+        with c1:
+            st.write("**Administratif**")
+            # Astuce Streamlit : le "on_change" permet de mettre à jour Supabase direct quand on coche !
+            st.checkbox("Projet signé (PDF)", value=projet_actuel['is_signed'], 
+                        on_change=update_checkbox, args=(clicked_id, "is_signed", not projet_actuel['is_signed']))
+            st.checkbox("Fichier coûts", value=projet_actuel['is_cost_file_done'],
+                        on_change=update_checkbox, args=(clicked_id, "is_cost_file_done", not projet_actuel['is_cost_file_done']))
+            st.checkbox("Mise à l'enquête", value=projet_actuel['is_permit_done'],
+                        on_change=update_checkbox, args=(clicked_id, "is_permit_done", not projet_actuel['is_permit_done']))
+            st.checkbox("Dronage", value=projet_actuel['is_drone_done'],
+                        on_change=update_checkbox, args=(clicked_id, "is_drone_done", not projet_actuel['is_drone_done']))
             
-            if len(projets_extraits) > 0:
-                for p in projets_extraits:
-                    date_db = None
-                    if p["Date de Début"] != "Non définie":
-                        date_obj = datetime.strptime(p["Date de Début"], "%d/%m/%Y")
-                        date_db = date_obj.strftime("%Y-%m-%d")
-                    
-                    reponse_recherche = supabase.table("projects").select("*").eq("project_name", p["Nom du Projet"]).execute()
-                    
-                    if len(reponse_recherche.data) == 0:
-                        nouveau_projet = {
-                            "project_name": p["Nom du Projet"],
-                            "project_type": p["Type"],
-                            "start_date": date_db
-                        }
-                        supabase.table("projects").insert(nouveau_projet).execute()
-                    else:
-                        projet_existant = reponse_recherche.data[0]
-                        if date_db and projet_existant.get("start_date") != date_db:
-                            supabase.table("projects").update({"start_date": date_db}).eq("id", projet_existant["id"]).execute()
-                            
-                st.success(f"✅ Synchronisation réussie ! {len(projets_extraits)} chantiers actifs pris en compte.")
-            else:
-                st.warning("Aucun chantier valide trouvé à partir du 1er août 2026.")
+        with c2:
+            st.write("**Technique & Logistique**")
+            st.checkbox("DRT (Dossier Technique)", value=projet_actuel['is_drt_done'],
+                        on_change=update_checkbox, args=(clicked_id, "is_drt_done", not projet_actuel['is_drt_done']))
+            st.checkbox("Liste du matériel", value=projet_actuel['is_material_list_done'],
+                        on_change=update_checkbox, args=(clicked_id, "is_material_list_done", not projet_actuel['is_material_list_done']))
+            # On n'affiche le dossier monteur général que s'il y a des panneaux (règle métier)
+            if projet_actuel['power_kwp'] > 0:
+                st.checkbox("Dossier monteur (Général)", value=projet_actuel['is_general_monteur_done'],
+                            on_change=update_checkbox, args=(clicked_id, "is_general_monteur_done", not projet_actuel['is_general_monteur_done']))
+            st.checkbox("Dossier électro", value=projet_actuel['is_electro_monteur_done'],
+                        on_change=update_checkbox, args=(clicked_id, "is_electro_monteur_done", not projet_actuel['is_electro_monteur_done']))
+
+        with c3:
+            st.write("**Validation**")
+            st.checkbox("SP (Sur SharePoint)", value=projet_actuel['is_sp_done'],
+                        on_change=update_checkbox, args=(clicked_id, "is_sp_done", not projet_actuel['is_sp_done']))
+            st.checkbox("CP (Prêt pour monteurs)", value=projet_actuel['is_cp_done'],
+                        on_change=update_checkbox, args=(clicked_id, "is_cp_done", not projet_actuel['is_cp_done']))
+            st.divider()
+            st.checkbox("🏁 Fin de projet (Remise ouvrage)", value=projet_actuel['is_project_finished'],
+                        on_change=update_checkbox, args=(clicked_id, "is_project_finished", not projet_actuel['is_project_finished']))
+
+else:
+    st.info("👆 Clique sur un projet dans le calendrier pour afficher sa checklist de suivi.")
