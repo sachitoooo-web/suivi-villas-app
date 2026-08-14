@@ -1,6 +1,7 @@
 streamlit
+streamlit-calendar
 supabase
-google-genai
-requests
-msal
+google-generativeai
+pandas
+streamlit-aggrid
 openpyxl
