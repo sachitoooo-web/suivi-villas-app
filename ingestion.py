@@ -5,7 +5,8 @@ import datetime
 def scanner_planning_excel(fichier_upload):
     """
     Lit le fichier Excel, recherche les cellules vertes contenant 'PRS',
-    et cherche la cellule jaune correspondante sur la même ligne pour la date de début.
+    cherche la cellule jaune correspondante sur la même ligne pour la date de début,
+    et filtre les projets à partir d'une certaine date (ex: 1er août 2026).
     """
     # data_only=True permet de lire les valeurs et non les formules
     wb = openpyxl.load_workbook(fichier_upload, data_only=True)
@@ -78,11 +79,20 @@ def scanner_planning_excel(fichier_upload):
                 if not date_debut:
                     date_debut = datetime.date.today().isoformat()
                     
-                projets_trouves.append({
-                    "prs": prs_code,
-                    "nom": projet_nom,
-                    "date_debut": date_debut,
-                    "cdp": "Sacha"
-                })
+                # --- FILTRE DE DATE ---
+                # On définit la date limite au 1er août 2026
+                date_limite = datetime.date(2026, 8, 1)
+                
+                # On transforme notre date texte en vraie date pour pouvoir comparer
+                date_projet_obj = datetime.date.fromisoformat(date_debut)
+                
+                # On n'ajoute le projet que s'il est après ou égal à la date limite
+                if date_projet_obj >= date_limite:
+                    projets_trouves.append({
+                        "prs": prs_code,
+                        "nom": projet_nom,
+                        "date_debut": date_debut,
+                        "cdp": "Sacha"
+                    })
 
     return projets_trouves
