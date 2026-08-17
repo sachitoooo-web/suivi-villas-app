@@ -3,5 +3,4 @@ streamlit-calendar
 supabase
 google-generativeai
 pandas
-streamlit-aggrid
 openpyxl

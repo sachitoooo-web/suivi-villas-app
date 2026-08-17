@@ -4,19 +4,18 @@ import datetime
 
 def scanner_planning_excel(fichier_upload):
     wb = openpyxl.load_workbook(fichier_upload, data_only=True)
-    projets_finaux = []
-    regex_prs = re.compile(r'(PRS\d{5,7})', re.IGNORECASE)
+    projets_bruts = []
     
-    # Couleurs strictement considérées comme "Vert Sacha"
-    verts_acceptes = ['00B050', '28A745', '39B54A', '32CD32', '00FF00', '92D050']
-
-    # On ne scanne que les onglets récents
+    regex_prs = re.compile(r'(PRS\d{5,7})', re.IGNORECASE)
+    # Les codes hexadécimaux stricts de TA couleur verte sur Excel
+    verts_acceptes = ['00B050', '28A745', '39B54A', '32CD32']
+    
     onglets_a_scanner = [nom for nom in wb.sheetnames if '2025' in nom or '2026' in nom]
     
     for nom_onglet in onglets_a_scanner:
         ws = wb[nom_onglet]
         
-        # 1. Cartographier le calendrier (Associer chaque colonne à sa Date)
+        # 1. Repérer la ligne des dates pour l'en-tête des colonnes
         ligne_des_dates = None
         dates_colonnes = {}
         for i, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=False)):
@@ -31,10 +30,10 @@ def scanner_planning_excel(fichier_upload):
                 break
                 
         if not ligne_des_dates:
-            continue # Pas de calendrier trouvé sur cet onglet
+            continue
             
-        # 2. Scanner le tableau à la recherche de tes projets verts
-        for row_idx, row in enumerate(ws.iter_rows(min_row=ligne_des_dates + 1, values_only=False), start=ligne_des_dates + 1):
+        # 2. Scanner le tableau
+        for row in ws.iter_rows(min_row=ligne_des_dates + 1, values_only=False):
             for col_idx, cell in enumerate(row):
                 if cell.value and isinstance(cell.value, str):
                     match_prs = regex_prs.search(cell.value)
@@ -42,44 +41,43 @@ def scanner_planning_excel(fichier_upload):
                     if match_prs:
                         prs_code = match_prs.group(1).upper()
                         
-                        # Vérification CHIRURGICALE de la couleur de la case
+                        # Vérifier la couleur verte
                         est_mon_projet = False
                         if cell.fill and cell.fill.start_color and cell.fill.start_color.rgb:
                             couleur_hex = str(cell.fill.start_color.rgb).upper()
-                            
                             if any(vert in couleur_hex for vert in verts_acceptes):
-                                est_mon_projet = True
-                            # Filtre strict : Composante verte forte, et bleue/rouge faibles (exclut les cyans et bleus)
-                            elif len(couleur_hex) == 8 and couleur_hex[2:4] < '88' and couleur_hex[4:6] > '90' and couleur_hex[6:8] < '88':
                                 est_mon_projet = True
                                 
                         if est_mon_projet:
-                            # On récupère directement la date associée à la colonne de cette case verte !
+                            # Associer le projet à la date de sa colonne
                             date_trouvee = dates_colonnes.get(col_idx)
-                            
                             if date_trouvee:
-                                nom_complet = str(cell.value).replace('\n', ' ').strip()
-                                
-                                # On vérifie si on l'a déjà ajouté pour ne pas faire de doublons
-                                deja_ajoute = False
-                                for p in projets_finaux:
-                                    if p["prs"] == prs_code:
-                                        # Si le projet prend plusieurs jours, on garde la date la plus ancienne (Début)
-                                        if date_trouvee < datetime.date.fromisoformat(p["date_debut"]):
-                                            p["date_debut"] = date_trouvee.isoformat()
-                                        deja_ajoute = True
-                                        break
-                                
-                                if not deja_ajoute:
-                                    projets_finaux.append({
-                                        "prs": prs_code,
-                                        "nom": nom_complet,
-                                        "date_debut": date_trouvee.isoformat(),
-                                        "cdp": "Sacha"
-                                    })
-                                    
-    # 3. Filtrer les dates : On ne remonte que les projets depuis janvier 2025
-    date_limite = datetime.date(2025, 1, 1)
-    projets_filtres = [p for p in projets_finaux if datetime.date.fromisoformat(p["date_debut"]) >= date_limite]
+                                projets_bruts.append({
+                                    "prs": prs_code,
+                                    "nom": str(cell.value).replace('\n', ' ').strip(),
+                                    "date_debut": date_trouvee,
+                                    "cdp": "Sacha"
+                                })
 
-    return projets_filtres
+    # 3. Consolidation et filtrage (1er Août 2026)
+    date_limite = datetime.date(2026, 8, 1)
+    projets_uniques = {}
+    
+    for p in projets_bruts:
+        if p["date_debut"] >= date_limite:
+            prs = p["prs"]
+            # Si le projet est sur plusieurs jours, on garde la date de début la plus ancienne
+            if prs not in projets_uniques or p["date_debut"] < projets_uniques[prs]["date_debut"]:
+                projets_uniques[prs] = p
+
+    # Formatage final
+    projets_finaux = []
+    for prs, p in projets_uniques.items():
+        projets_finaux.append({
+            "prs": prs,
+            "nom": p["nom"],
+            "date_debut": p["date_debut"].isoformat(),
+            "cdp": p["cdp"]
+        })
+        
+    return projets_finaux
