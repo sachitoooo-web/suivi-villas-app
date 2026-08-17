@@ -45,21 +45,33 @@ with st.sidebar:
                 nouveaux_projets = scanner_planning_excel(excel_upload)
                 
                 if nouveaux_projets:
-                    # Enregistrement des projets dans Supabase
+                    projets_ajoutes = 0
+                    
+                    # Enregistrement des projets dans Supabase avec sécurité Anti-Crash
                     for p in nouveaux_projets:
-                        existant = supabase.table("solar_projects").select("id").eq("project_name", p["nom"]).execute()
-                        # Si le projet n'existe pas encore, on le crée
-                        if not existant.data:
-                            nouveau_projet_db = {
-                                "project_name": p["nom"],
-                                "client_name": p["prs"], # On stocke temporairement le code PRS ici
-                                "start_date": p["date_debut"],
-                                "cdp": p["cdp"]
-                            }
-                            supabase.table("solar_projects").insert(nouveau_projet_db).execute()
+                        try:
+                            existant = supabase.table("solar_projects").select("id").eq("project_name", p["nom"]).execute()
                             
-                    st.success(f"{len(nouveaux_projets)} projets Sacha détectés et synchronisés !")
-                    st.rerun()
+                            # Si le projet n'existe pas encore, on le crée
+                            if not existant.data:
+                                nouveau_projet_db = {
+                                    "project_name": p["nom"],
+                                    "client_name": p["prs"], # On stocke temporairement le code PRS ici
+                                    "start_date": p["date_debut"],
+                                    "cdp": p["cdp"]
+                                }
+                                supabase.table("solar_projects").insert(nouveau_projet_db).execute()
+                                projets_ajoutes += 1
+                                
+                        except Exception as e:
+                            # Streamlit va afficher la VRAIE erreur Supabase ici, sans planter
+                            st.error(f"Erreur d'insertion pour le projet {p['prs']} : {e}")
+                            
+                    if projets_ajoutes > 0:
+                        st.success(f"{projets_ajoutes} nouveaux chantiers ajoutés au système !")
+                        st.rerun()
+                    else:
+                        st.info("Mise à jour terminée. Aucun nouveau projet à ajouter (ils y sont déjà tous).")
                 else:
                     st.warning("Aucun projet vert trouvé avec un code PRS.")
 
