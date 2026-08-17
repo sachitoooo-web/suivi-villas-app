@@ -7,7 +7,6 @@ def scanner_planning_excel(fichier_upload):
     projets_bruts = []
     
     regex_prs = re.compile(r'(PRS\d{5,7})', re.IGNORECASE)
-    # Les codes hexadécimaux stricts de TA couleur verte sur Excel
     verts_acceptes = ['00B050', '28A745', '39B54A', '32CD32']
     
     onglets_a_scanner = [nom for nom in wb.sheetnames if '2025' in nom or '2026' in nom]
@@ -15,7 +14,6 @@ def scanner_planning_excel(fichier_upload):
     for nom_onglet in onglets_a_scanner:
         ws = wb[nom_onglet]
         
-        # 1. Repérer la ligne des dates pour l'en-tête des colonnes
         ligne_des_dates = None
         dates_colonnes = {}
         for i, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=False)):
@@ -32,7 +30,6 @@ def scanner_planning_excel(fichier_upload):
         if not ligne_des_dates:
             continue
             
-        # 2. Scanner le tableau
         for row in ws.iter_rows(min_row=ligne_des_dates + 1, values_only=False):
             for col_idx, cell in enumerate(row):
                 if cell.value and isinstance(cell.value, str):
@@ -41,7 +38,6 @@ def scanner_planning_excel(fichier_upload):
                     if match_prs:
                         prs_code = match_prs.group(1).upper()
                         
-                        # Vérifier la couleur verte
                         est_mon_projet = False
                         if cell.fill and cell.fill.start_color and cell.fill.start_color.rgb:
                             couleur_hex = str(cell.fill.start_color.rgb).upper()
@@ -49,7 +45,6 @@ def scanner_planning_excel(fichier_upload):
                                 est_mon_projet = True
                                 
                         if est_mon_projet:
-                            # Associer le projet à la date de sa colonne
                             date_trouvee = dates_colonnes.get(col_idx)
                             if date_trouvee:
                                 projets_bruts.append({
@@ -59,18 +54,16 @@ def scanner_planning_excel(fichier_upload):
                                     "cdp": "Sacha"
                                 })
 
-    # 3. Consolidation et filtrage (1er Août 2026)
+    # LIMITE STRICTE AU 1ER AOÛT 2026
     date_limite = datetime.date(2026, 8, 1)
     projets_uniques = {}
     
     for p in projets_bruts:
         if p["date_debut"] >= date_limite:
             prs = p["prs"]
-            # Si le projet est sur plusieurs jours, on garde la date de début la plus ancienne
             if prs not in projets_uniques or p["date_debut"] < projets_uniques[prs]["date_debut"]:
                 projets_uniques[prs] = p
 
-    # Formatage final
     projets_finaux = []
     for prs, p in projets_uniques.items():
         projets_finaux.append({

@@ -6,7 +6,6 @@ import pandas as pd
 from ia_extraction import analyser_offre_pdf
 from ingestion import scanner_planning_excel
 
-# --- CONFIGURATION ---
 st.set_page_config(page_title="Soleol - Pilotage Projets", layout="wide", initial_sidebar_state="expanded")
 
 @st.cache_resource
@@ -20,14 +19,13 @@ def get_projects():
 
 def update_checkbox(project_id, column_name, new_value):
     supabase.table("solar_projects").update({column_name: new_value}).eq("id", project_id).execute()
-    st.toast("✅ Mise à jour enregistrée")
+    st.toast("✅ Sauvegardé !")
 
 # ==========================================
 # BARRE LATÉRALE
 # ==========================================
 with st.sidebar:
     st.header("📅 Synchro Excel")
-    st.write("Glisse ton fichier PLANNING (2).xlsx")
     
     excel_upload = st.file_uploader("Fichier Excel", type=["xlsx"])
     if excel_upload is not None:
@@ -38,7 +36,6 @@ with st.sidebar:
                     projets_ajoutes = 0
                     for p in nouveaux_projets:
                         try:
-                            # On vérifie par le code PRS (stocké dans client_name)
                             existant = supabase.table("solar_projects").select("id").eq("client_name", p["prs"]).execute()
                             if not existant.data:
                                 nouveau_projet_db = {
@@ -52,15 +49,14 @@ with st.sidebar:
                         except Exception as e:
                             st.error(f"Erreur base de données pour {p['prs']} : {e}")
                             
-                    st.success(f"Terminé ! {projets_ajoutes} nouveaux chantiers ajoutés.")
+                    st.success(f"Terminé ! {projets_ajoutes} nouveaux chantiers ajoutés depuis le 01/08/2026.")
                     st.rerun()
                 else:
-                    st.warning("Aucun projet Sacha trouvé à partir du 01/08/2026.")
+                    st.warning("Aucun projet Sacha trouvé après le 01/08/2026.")
 
     st.divider()
 
     st.header("🤖 Contrat PDF")
-    st.write("Glisse le devis pour fusionner les données")
     fichier_upload = st.file_uploader("PDF du contrat", type=["pdf"])
     if fichier_upload is not None:
         if st.button("Lancer l'extraction IA"):
@@ -77,7 +73,6 @@ with st.sidebar:
                             "equipment_list": donnees.get("materiel", ""),
                             "is_signed": True
                         }
-                        # L'IA met à jour la ligne Excel existante !
                         supabase.table("solar_projects").update(update_data).eq("client_name", prs_extrait).execute()
                         st.success(f"✅ Devis lié au projet {prs_extrait} !")
                     else:
@@ -116,21 +111,23 @@ with onglet_calendrier:
 
 st.divider()
 
+# --- LA MÉMOIRE DE CLIC (RÉSOLUTION DU BUG CHECKLIST) ---
 if cal_state.get("eventClick"):
-    clicked_id = int(cal_state["eventClick"]["event"]["id"])
+    st.session_state["selected_project_id"] = int(cal_state["eventClick"]["event"]["id"])
+
+if "selected_project_id" in st.session_state:
+    clicked_id = st.session_state["selected_project_id"]
     projet_actuel = next((p for p in projets if p["id"] == clicked_id), None)
     
     if projet_actuel:
         st.subheader(f"🛠️ {projet_actuel['project_name']}")
         
-        # Données IA
         col1, col2, col3 = st.columns(3)
         col1.metric("Prix Total TTC", f"{projet_actuel.get('total_price') or 0} CHF")
         col2.metric("Puissance PV", f"{projet_actuel.get('power_kwp') or 0} kWc")
         col3.metric("Batterie", f"{projet_actuel.get('battery_kwh') or 0} kWh")
         st.info(f"**Matériel :** {projet_actuel.get('equipment_list', 'Non renseigné')}")
         
-        # Checklists Conditionnelles
         is_pv = float(projet_actuel.get('power_kwp') or 0) > 0 or 'batterie' not in str(projet_actuel.get('project_name', '')).lower()
         
         st.write("### ✅ Checklist")
@@ -144,7 +141,7 @@ if cal_state.get("eventClick"):
             st.checkbox("DRT", value=bool(projet_actuel.get('is_drt_done', False)), on_change=update_checkbox, args=(clicked_id, "is_drt_done", not projet_actuel.get('is_drt_done', False)), key=f"d_{clicked_id}")
             st.checkbox("Dossier électro", value=bool(projet_actuel.get('is_electro_monteur_done', False)), on_change=update_checkbox, args=(clicked_id, "is_electro_monteur_done", not projet_actuel.get('is_electro_monteur_done', False)), key=f"e_{clicked_id}")
             if is_pv:
-                st.checkbox("Dossier monteur général", value=bool(projet_actuel.get('is_general_monteur_done', False)), on_change=update_checkbox, args=(clicked_id, "is_general_monteur_done", not projet_actuel.get('is_general_monteur_done', False)), key=f"m_{clicked_id}")
+                st.checkbox("Dossier monteur", value=bool(projet_actuel.get('is_general_monteur_done', False)), on_change=update_checkbox, args=(clicked_id, "is_general_monteur_done", not projet_actuel.get('is_general_monteur_done', False)), key=f"m_{clicked_id}")
         with c3:
             st.checkbox("SP", value=bool(projet_actuel.get('is_sp_done', False)), on_change=update_checkbox, args=(clicked_id, "is_sp_done", not projet_actuel.get('is_sp_done', False)), key=f"sp_{clicked_id}")
             st.checkbox("CP", value=bool(projet_actuel.get('is_cp_done', False)), on_change=update_checkbox, args=(clicked_id, "is_cp_done", not projet_actuel.get('is_cp_done', False)), key=f"cp_{clicked_id}")
